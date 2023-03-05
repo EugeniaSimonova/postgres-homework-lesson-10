@@ -42,13 +42,13 @@ postgres@ees-09:~$ tail -n 5 /var/log/postgresql/postgresql-14-main.log
 
 BEGIN;
 
-UPDATE accounts SET amount = amount - 10.00 WHERE acc_no = 1;
-
 SELECT txid_current(), pg_backend_pid();
 
  txid_current | pg_backend_pid 
 --------------+----------------
           753 |           1367
+
+UPDATE accounts SET amount = amount - 10.00 WHERE acc_no = 1;
 
 ```
 
@@ -82,7 +82,27 @@ SELECT txid_current(), pg_backend_pid();
 UPDATE accounts SET amount = amount - 50.00 WHERE acc_no = 1;
 
 ```
+
+
 ```
+CREATE VIEW locks_v AS
+SELECT pid,
+       locktype,
+       CASE locktype
+         WHEN 'relation' THEN relation::regclass::text
+         WHEN 'transactionid' THEN transactionid::text
+         WHEN 'tuple' THEN relation::regclass::text||':'||tuple::text
+       END AS lockid,
+       mode,
+       granted
+FROM pg_locks
+WHERE locktype in ('relation','transactionid','tuple')
+AND (locktype != 'relation' OR relation = 'accounts'::regclass);
+
+SELECT * FROM locks_v;
+
+
+
  pid  |   locktype    |   lockid   |       mode       | granted 
 ------+---------------+------------+------------------+---------
  1723 | relation      | accounts   | RowExclusiveLock | t   -- Построчная блокировка таблицы третьей транзакцией
@@ -140,7 +160,7 @@ UPDATE accounts SET amount = amount - 10.00 WHERE acc_no = 3;
 UPDATE accounts SET amount = amount + 10.00 WHERE acc_no = 1;
 ```
 
-Разобраться можно, операции внесены в журнал
+Разобраться можно, операции внесены в журнал, можно посмотреть какая транзакция какую блокирует
 
 ```
 2023-03-05 13:29:38.702 UTC [1367] postgres@postgres ERROR:  deadlock detected
